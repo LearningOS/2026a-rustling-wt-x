@@ -2,7 +2,6 @@
 	double linked list reverse
 	This problem requires you to reverse a doubly linked list
 */
-// I AM NOT DONE
 
 use std::fmt::{self, Display, Formatter};
 use std::ptr::NonNull;
@@ -73,8 +72,30 @@ impl<T> LinkedList<T> {
         }
     }
 	pub fn reverse(&mut self){
-		// TODO
+		let mut current = self.start;
+        while let Some(mut ptr) = current {
+            // SAFETY: Each node belongs to this exclusively borrowed list.
+            // Save the old next link before reversing both links.
+            unsafe {
+                let node = ptr.as_mut();
+                current = node.next;
+                std::mem::swap(&mut node.next, &mut node.prev);
+            }
+        }
+        std::mem::swap(&mut self.start, &mut self.end);
 	}
+}
+
+impl<T> Drop for LinkedList<T> {
+    fn drop(&mut self) {
+        let mut current = self.start.take();
+        while let Some(ptr) = current {
+            // SAFETY: Each allocation was created by Box::into_raw, belongs
+            // solely to this list, and is reconstructed and dropped once.
+            let node = unsafe { Box::from_raw(ptr.as_ptr()) };
+            current = node.next;
+        }
+    }
 }
 
 impl<T> Display for LinkedList<T>
@@ -156,4 +177,29 @@ mod tests {
 			assert_eq!(reverse_vec[i],*list.get(i as i32).unwrap());
 		}
 	}
+}
+#[cfg(test)]
+mod edge_tests {
+    use super::*;
+    #[test]
+    fn reverse_twice_and_append() {
+        for values in [vec![], vec![1], vec![1,2,2,3]] {
+            let mut list = LinkedList::new();
+            for &value in &values { list.add(value); }
+            list.reverse();
+            assert_eq!(list.length as usize, values.len());
+            let mut node = list.end;
+            for value in &values {
+                let ptr = node.unwrap();
+                // SAFETY: Traversing live nodes while the list remains borrowed.
+                unsafe { assert_eq!(&ptr.as_ref().val, value); node = ptr.as_ref().prev; }
+            }
+            assert!(node.is_none());
+            list.reverse();
+            list.add(9);
+            for (i,value) in values.iter().chain(std::iter::once(&9)).enumerate() {
+                assert_eq!(list.get(i as i32), Some(value));
+            }
+        }
+    }
 }

@@ -2,7 +2,6 @@
 	single linked list merge
 	This problem requires you to merge two ordered singly linked lists into one ordered singly linked list
 */
-// I AM NOT DONE
 
 use std::fmt::{self, Display, Formatter};
 use std::ptr::NonNull;
@@ -69,15 +68,53 @@ impl<T> LinkedList<T> {
             },
         }
     }
-	pub fn merge(list_a:LinkedList<T>,list_b:LinkedList<T>) -> Self
-	{
-		//TODO
-		Self {
-            length: 0,
-            start: None,
-            end: None,
+    pub fn merge(mut list_a: Self, mut list_b: Self) -> Self
+    where
+        T: Ord,
+    {
+        let mut result = Self::new();
+        while list_a.start.is_some() || list_b.start.is_some() {
+            let source = match (list_a.start, list_b.start) {
+                // SAFETY: Both pointers are live nodes owned by the input lists.
+                (Some(a), Some(b)) => if unsafe { a.as_ref().val <= b.as_ref().val } {
+                    &mut list_a
+                } else {
+                    &mut list_b
+                },
+                (Some(_), None) => &mut list_a,
+                (None, Some(_)) => &mut list_b,
+                (None, None) => unreachable!(),
+            };
+            let mut node = source.start.take().unwrap();
+            // SAFETY: The inputs are consumed, so this node is exclusively owned.
+            // Detach it before transferring ownership to the result list.
+            unsafe {
+                source.start = node.as_mut().next.take();
+                if let Some(mut tail) = result.end {
+                    tail.as_mut().next = Some(node);
+                } else {
+                    result.start = Some(node);
+                }
+            }
+            source.length -= 1;
+            if source.start.is_none() { source.end = None; }
+            result.end = Some(node);
+            result.length += 1;
         }
-	}
+        result
+    }
+}
+
+impl<T> Drop for LinkedList<T> {
+    fn drop(&mut self) {
+        let mut current = self.start.take();
+        while let Some(ptr) = current {
+            // SAFETY: Each allocation was created by Box::into_raw, belongs
+            // solely to this list, and is reconstructed and dropped once.
+            let node = unsafe { Box::from_raw(ptr.as_ptr()) };
+            current = node.next;
+        }
+    }
 }
 
 impl<T> Display for LinkedList<T>
@@ -170,4 +207,41 @@ mod tests {
 			assert_eq!(target_vec[i],*list_c.get(i as i32).unwrap());
 		}
 	}
+}
+#[cfg(test)]
+mod edge_tests {
+    use super::*;
+    #[test]
+    fn merge_empty_duplicates_and_append() {
+        for (a,b) in [(vec![],vec![]), (vec![1],vec![]), (vec![],vec![2]), (vec![1,1,3],vec![1,2,3])] {
+            let mut expected = a.iter().chain(&b).copied().collect::<Vec<_>>();
+            expected.sort();
+            let mut left = LinkedList::new();
+            let mut right = LinkedList::new();
+            for value in a { left.add(value); }
+            for value in b { right.add(value); }
+            let mut merged = LinkedList::merge(left,right);
+            assert_eq!(merged.length as usize, expected.len());
+            merged.add(9);
+            expected.push(9);
+            for (i,value) in expected.iter().enumerate() { assert_eq!(merged.get(i as i32), Some(value)); }
+            assert_eq!(merged.get(expected.len() as i32), None);
+        }
+    }
+    #[test]
+    fn merge_drops_each_owned_value_once() {
+        use std::{cell::Cell, rc::Rc};
+        #[derive(Eq, PartialEq, Ord, PartialOrd)]
+        struct Tracked(i32, Rc<Cell<usize>>);
+        impl Drop for Tracked { fn drop(&mut self) { self.1.set(self.1.get() + 1); } }
+        let drops = Rc::new(Cell::new(0));
+        let mut a = LinkedList::new();
+        let mut b = LinkedList::new();
+        a.add(Tracked(1, drops.clone()));
+        b.add(Tracked(2, drops.clone()));
+        let merged = LinkedList::merge(a, b);
+        assert_eq!(drops.get(), 0);
+        drop(merged);
+        assert_eq!(drops.get(), 2);
+    }
 }

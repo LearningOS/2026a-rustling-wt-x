@@ -2,7 +2,6 @@
 	heap
 	This question requires you to implement a binary heap function
 */
-// I AM NOT DONE
 
 use std::cmp::Ord;
 use std::default::Default;
@@ -37,7 +36,15 @@ where
     }
 
     pub fn add(&mut self, value: T) {
-        //TODO
+        self.items.push(value);
+        self.count += 1;
+        let mut i = self.count;
+        while i > 1 {
+            let parent = self.parent_idx(i);
+            if !(self.comparator)(&self.items[i], &self.items[parent]) { break; }
+            self.items.swap(i, parent);
+            i = parent;
+        }
     }
 
     fn parent_idx(&self, idx: usize) -> usize {
@@ -57,8 +64,13 @@ where
     }
 
     fn smallest_child_idx(&self, idx: usize) -> usize {
-        //TODO
-		0
+        let left = self.left_child_idx(idx);
+        let right = self.right_child_idx(idx);
+        if right <= self.count && (self.comparator)(&self.items[right], &self.items[left]) {
+            right
+        } else {
+            left
+        }
     }
 }
 
@@ -84,8 +96,17 @@ where
     type Item = T;
 
     fn next(&mut self) -> Option<T> {
-        //TODO
-		None
+        if self.is_empty() { return None; }
+        let result = self.items.swap_remove(1);
+        self.count -= 1;
+        let mut i = 1;
+        while self.children_present(i) {
+            let child = self.smallest_child_idx(i);
+            if !(self.comparator)(&self.items[child], &self.items[i]) { break; }
+            self.items.swap(i, child);
+            i = child;
+        }
+        Some(result)
     }
 }
 
@@ -150,5 +171,30 @@ mod tests {
         assert_eq!(heap.next(), Some(4));
         heap.add(1);
         assert_eq!(heap.next(), Some(2));
+    }
+}
+#[cfg(test)]
+mod edge_tests {
+    use super::*;
+    #[test]
+    fn complete_drain_duplicates_and_reuse() {
+        for length in 0..=6 {
+            for mut code in 0..3usize.pow(length) {
+                let mut values = Vec::new();
+                let mut min = Heap::new_min();
+                let mut max = Heap::new_max();
+                for _ in 0..length {
+                    let value = (code % 3) as i32 - 1; code /= 3;
+                    values.push(value); min.add(value); max.add(value);
+                }
+                values.sort();
+                assert_eq!(min.by_ref().collect::<Vec<_>>(), values);
+                values.reverse();
+                assert_eq!(max.by_ref().collect::<Vec<_>>(), values);
+                assert!(min.is_empty()); assert!(max.is_empty());
+                assert_eq!(min.next(), None);
+                min.add(7); assert_eq!(min.next(), Some(7)); assert_eq!(min.next(), None);
+            }
+        }
     }
 }
